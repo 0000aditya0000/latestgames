@@ -1,0 +1,66 @@
+const fs = require("fs");
+const path = require("path");
+const mysql = require("mysql2/promise");
+require("dotenv").config({ path: "/var/www/latestgames/.env" });
+
+// DB connection
+const db = mysql.createPool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 5
+});
+
+async function generateCasinoJson() {
+    try {
+        console.log("🔄 Generating casino games JSON...");
+
+        const [rows] = await db.query(`
+            SELECT
+                g.game_uid AS id,
+                g.game_name AS name,
+                gp.provider_name AS title
+            FROM games g
+            JOIN game_providers gp
+                ON g.provider_code = gp.provider_code
+            WHERE g.status = 1
+              AND (
+                    LOWER(g.game_type) LIKE '%casino%'
+                    OR LOWER(g.game_type) LIKE '%live%'
+                  )
+        `);
+
+        const result = rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            img: "",
+            title: row.title
+        }));
+
+        const outputDir = "/var/www/latestgames/data";
+        const outputFile = path.join(outputDir, "casino_games.json");
+
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+        }
+
+        fs.writeFileSync(
+            outputFile,
+            JSON.stringify(result, null, 2),
+            "utf8"
+        );
+
+        console.log(`✅ JSON file created: ${outputFile}`);
+        console.log(`🎰 Total casino games: ${result.length}`);
+
+    } catch (err) {
+        console.error("❌ Failed to generate casino JSON:", err.message);
+    } finally {
+        process.exit(0);
+    }
+}
+
+// Run
+generateCasinoJson();
